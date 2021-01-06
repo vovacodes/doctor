@@ -1,0 +1,14 @@
+[package]
+name = "doctor"
+version = "0.1.0"
+description = "Flexible low level parser for Javadoc-like doc comments: Javadoc, JSDoc, TSDoc, etc."
+authors = ["Vladimir Guguiev <wizardzloy@gmail.com>"]
+license = "MIT"
+edition = "2018"
+documentation = "https://docs.rs/doctor"
+repository = "https://github.com/vovacodes/doctor/"
+categories = ["parser-implementations"]
+keywords = ["doc","documention", "javadoc", "jsdoc", "tsdoc", "parser"]
+
+[dependencies]
+nom = "6.0.1"
