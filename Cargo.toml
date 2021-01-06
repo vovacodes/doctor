@@ -8,7 +8,7 @@ edition = "2018"
 documentation = "https://docs.rs/doctor"
 repository = "https://github.com/vovacodes/doctor/"
 categories = ["parser-implementations"]
-keywords = ["doc","documention", "javadoc", "jsdoc", "tsdoc", "parser"]
+keywords = ["doc", "javadoc", "jsdoc", "tsdoc", "parser"]
 
 [dependencies]
 nom = "6.0.1"
