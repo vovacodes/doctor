@@ -28,7 +28,7 @@ pub struct BlockTag<'a> {
     pub name: String,
 
     #[cfg_attr(feature = "serde", serde(borrow))]
-    pub body: Vec<BlockTagBodyItem<'a>>,
+    pub body_items: Vec<BlockTagBodyItem<'a>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -50,10 +50,11 @@ pub struct InlineTag<'a> {
 #[cfg(test)]
 mod tests {
     use core::fmt::Debug;
+    #[cfg(feature = "serde")]
+    use serde::{Deserialize, Serialize};
     use std::hash::Hash;
 
     use super::*;
-    use serde::{Deserialize, Serialize};
 
     fn assert_default<T: Default>() {}
     fn assert_clone<T: Clone>() {}

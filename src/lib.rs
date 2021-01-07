@@ -1,6 +1,6 @@
 #![type_length_limit = "115452926"]
 
-mod ast;
+pub mod ast;
 mod parsers;
 
 use nom::error::convert_error;
@@ -13,7 +13,36 @@ use ast::DocComment;
 extern crate serde;
 
 /// Parses `input` into a `DocComment` struct representing the doc comment's AST.
-pub fn parse_doc_comment(input: &str) -> Result<DocComment, String> {
+///
+/// # Examples
+///
+/// ```
+/// use doctor::parse;
+/// use doctor::ast::{DocComment, Description, DescriptionBodyItem, InlineTag};
+///
+/// assert_eq!(
+///     parse(r#"/**
+///         * This is a doc comment.
+///         * It contains an {@inlineTag with some body} in its description.
+///         */"#
+///     ),
+///     Ok(DocComment {
+///         description: Some(Description {
+///             body_items: vec![
+///                 DescriptionBodyItem::TextSegment("This is a doc comment.\n"),
+///                 DescriptionBodyItem::TextSegment("It contains an "),
+///                 DescriptionBodyItem::InlineTag(InlineTag {
+///                     name: "inlineTag",
+///                     body_lines: vec!["with some body"],
+///                 }),
+///                 DescriptionBodyItem::TextSegment("in its description.\n")
+///             ]
+///         }),
+///         block_tags: vec![]
+///     }),
+/// );
+/// ```
+pub fn parse(input: &str) -> Result<DocComment, String> {
     parsers::doc_comment()
         .parse(input)
         .finish()
@@ -26,9 +55,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_doc_comment() {
+    fn test_parse() {
         assert_eq!(
-            parse_doc_comment("/** Comment */ not comment"),
+            parse("/** Comment */ not comment"),
             Err(r#"0: at line 1, in Eof:
 /** Comment */ not comment
               ^
