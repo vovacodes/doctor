@@ -1,10 +1,8 @@
-#![type_length_limit = "115452926"]
-
 pub mod ast;
 mod parsers;
 
 use nom::error::convert_error;
-use nom::{Finish, Parser};
+use nom::Finish;
 
 use ast::DocComment;
 
@@ -43,8 +41,7 @@ extern crate serde;
 /// );
 /// ```
 pub fn parse(input: &str) -> Result<DocComment, String> {
-    parsers::doc_comment()
-        .parse(input)
+    parsers::doc_comment(input)
         .finish()
         .map(|(_, doc)| doc)
         .map_err(|err| convert_error(input, err))
