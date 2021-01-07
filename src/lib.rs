@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
+
 pub mod ast;
 mod parsers;
 
@@ -40,6 +42,11 @@ extern crate serde;
 ///     }),
 /// );
 /// ```
+///
+/// # Errors
+///
+/// If `input` is not a valid doc comment, an error explaining where the parsing failed is returned.  
+///
 pub fn parse(input: &str) -> Result<DocComment, String> {
     parsers::doc_comment(input)
         .finish()

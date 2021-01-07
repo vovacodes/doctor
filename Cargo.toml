@@ -5,8 +5,9 @@ description = "Flexible low level parser for Javadoc-like doc comments: Javadoc,
 authors = ["Vladimir Guguiev <wizardzloy@gmail.com>"]
 license = "MIT"
 edition = "2018"
+readme = "README.md"
+repository = "https://github.com/vovacodes/doctor"
 documentation = "https://docs.rs/doctor"
-repository = "https://github.com/vovacodes/doctor/"
 categories = ["parser-implementations"]
 keywords = ["doc", "javadoc", "jsdoc", "tsdoc", "parser"]
 
