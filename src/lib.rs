@@ -2,12 +2,14 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 
 pub mod ast;
+pub mod error;
 mod parsers;
 
 use nom::error::convert_error;
 use nom::Finish;
 
 use ast::DocComment;
+use error::Error;
 
 #[cfg(feature = "serde")]
 #[macro_use]
@@ -48,12 +50,15 @@ extern crate serde;
 ///
 /// If `input` is not a valid doc comment, an error explaining where the parsing failed is returned.  
 ///
-pub fn parse(input: &str) -> Result<DocComment, String> {
+pub fn parse(input: &str) -> Result<DocComment, Error> {
     parsers::doc_comment(input)
         .finish()
         .map(|(_, doc)| doc)
-        .map_err(|err| convert_error(input, err))
+        .map_err(|err| Error::ParseError(convert_error(input, err)))
 }
+
+#[cfg(doctest)]
+doc_comment::doctest!("../README.md", readme);
 
 #[cfg(test)]
 mod tests {
@@ -63,7 +68,8 @@ mod tests {
     fn test_parse() {
         assert_eq!(
             parse("/** Comment */ not comment"),
-            Err(r#"0: at line 1, in Eof:
+            Err(Error::ParseError(
+                r#"0: at line 1, in Eof:
 /** Comment */ not comment
               ^
 
@@ -72,7 +78,8 @@ mod tests {
 ^
 
 "#
-            .to_owned())
+                .to_owned()
+            ))
         )
     }
 }
