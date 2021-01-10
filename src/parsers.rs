@@ -1,4 +1,3 @@
-use crate::ast::{Description, DescriptionBodyItem, DocComment, InlineTag};
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag};
 use nom::character::complete::{
@@ -10,6 +9,8 @@ use nom::error::{context, make_error, ErrorKind, VerboseError};
 use nom::multi::{fold_many1, many0, separated_list1};
 use nom::sequence::{delimited, pair, preceded, tuple};
 use nom::{IResult, Parser};
+
+use crate::ast::{BlockTag, BodyItem, Description, DocComment, InlineTag};
 
 /// Eats the doc comment start sequence.
 fn comment_start(i: &str) -> IResult<&str, (), VerboseError<&str>> {
@@ -28,7 +29,7 @@ fn comment_end(i: &str) -> IResult<&str, (), VerboseError<&str>> {
         .parse(i)
 }
 
-/// Eats a single comment line leading, i.e. ` * `.
+/// Parses a single comment line leading, i.e. ` * `.
 fn line_leading(i: &str) -> IResult<&str, &str, VerboseError<&str>> {
     context(
         "line_leading",
@@ -37,6 +38,7 @@ fn line_leading(i: &str) -> IResult<&str, &str, VerboseError<&str>> {
     .parse(i)
 }
 
+/// Parses an inline or block tag name.
 fn tag_name(i: &str) -> IResult<&str, &str, VerboseError<&str>> {
     context(
         "tag_name",
@@ -62,6 +64,7 @@ fn non_empty<'a>(
     }
 }
 
+/// Parses a single line of an inline tag's body.
 fn inline_tag_body_line(i: &str) -> IResult<&str, &str, VerboseError<&str>> {
     context(
         "inline_tag_body_line",
@@ -76,6 +79,8 @@ fn inline_tag_body_line(i: &str) -> IResult<&str, &str, VerboseError<&str>> {
     .parse(i)
 }
 
+/// Parses an inline tag's body.
+/// It might contain multiple lines of text.
 fn inline_tag_body(i: &str) -> IResult<&str, Vec<&str>, VerboseError<&str>> {
     context(
         "inline_tag_body",
@@ -96,6 +101,110 @@ fn inline_tag(i: &str) -> IResult<&str, InlineTag<'_>, VerboseError<&str>> {
     .map(|(name, maybe_body_lines)| InlineTag {
         name,
         body_lines: maybe_body_lines.unwrap_or_else(Vec::new),
+    })
+    .parse(i)
+}
+
+/// Parses an single text segment of a description's or block tag's body.
+/// A segment is usually terminated by either an inline tag or a line ending.
+fn body_text_segment(i: &str) -> IResult<&str, &str, VerboseError<&str>> {
+    context(
+        "body_text_segment",
+        alt((
+            line_ending,
+            recognize(tuple((
+                verify(
+                    take_until_either(&[
+                        Token::Escapable("{"),
+                        Token::Escapable("}"),
+                        Token::Escapable("@"),
+                        Token::NonEscapable("\r"),
+                        Token::NonEscapable("\n"),
+                        Token::NonEscapable("*/"),
+                    ]),
+                    // The segment has to be non-empty and not whitespace-only.
+                    |s: &str| {
+                        !s.is_empty() && s.chars().any(|ch| !ch.is_whitespace() && ch != '\t')
+                    },
+                ),
+                opt(line_ending),
+            ))),
+        )),
+    )
+    .parse(i)
+}
+
+/// Parses body of a description or a block tag.
+fn body(i: &str) -> IResult<&str, Vec<BodyItem<'_>>, VerboseError<&str>> {
+    #[derive(Debug)]
+    enum ParsedEntities<'a> {
+        BodyItem(BodyItem<'a>),
+        Ignored,
+    }
+
+    verify(
+        fold_many1(
+            alt((
+                line_leading.map(|_| ParsedEntities::Ignored),
+                space1.map(|_| ParsedEntities::Ignored),
+                inline_tag
+                    .map(BodyItem::InlineTag)
+                    .map(ParsedEntities::BodyItem),
+                body_text_segment
+                    .map(BodyItem::TextSegment)
+                    .map(ParsedEntities::BodyItem),
+            )),
+            vec![],
+            |mut items, item| {
+                if let ParsedEntities::BodyItem(item) = item {
+                    items.push(item)
+                }
+                items
+            },
+        ),
+        |body_items: &Vec<BodyItem>| {
+            // Don't consider empty or whitespace-only lines a body.
+            body_items.iter().any(|item| match item {
+                BodyItem::TextSegment(s) => !is_empty_or_multispace(s),
+                BodyItem::InlineTag(_) => true,
+            })
+        },
+    )
+    .parse(i)
+}
+
+/// Parses a description section of a doc comment.
+fn description(i: &str) -> IResult<&str, Description<'_>, VerboseError<&str>> {
+    context("description", body)
+        .map(|body_items| Description { body_items })
+        .parse(i)
+}
+
+/// Parses a single block tag.
+fn block_tag(i: &str) -> IResult<&str, BlockTag<'_>, VerboseError<&str>> {
+    context("block_tag", tuple((tag_name, space0, opt(body))))
+        .map(|(name, _, maybe_body_items)| BlockTag {
+            name,
+            body_items: maybe_body_items.unwrap_or_else(Vec::new),
+        })
+        .parse(i)
+}
+
+/// Parses an entire doc comment.
+pub fn doc_comment(i: &str) -> IResult<&str, DocComment<'_>, VerboseError<&str>> {
+    context(
+        "doc_comment",
+        all_consuming(tuple((
+            comment_start,
+            opt(line_leading),
+            opt(description),
+            many0(delimited(opt(line_leading), block_tag, opt(line_ending))),
+            comment_end,
+        ))),
+    )
+    .map(|(_, _, description, block_tags, _)| DocComment {
+        description,
+        block_tags,
     })
     .parse(i)
 }
@@ -140,80 +249,16 @@ fn take_until_either<'a>(
     }
 }
 
-fn description_text_segment(i: &str) -> IResult<&str, DescriptionBodyItem<'_>, VerboseError<&str>> {
-    context(
-        "description_text_segment",
-        alt((
-            line_ending,
-            recognize(tuple((
-                verify(
-                    take_until_either(&[
-                        Token::Escapable("{"),
-                        Token::Escapable("}"),
-                        Token::Escapable("@"),
-                        Token::NonEscapable("\r"),
-                        Token::NonEscapable("\n"),
-                        Token::NonEscapable("*/"),
-                    ]),
-                    // The segment has to be non-empty and not whitespace-only.
-                    |s: &str| {
-                        !s.is_empty() && s.chars().any(|ch| !ch.is_whitespace() && ch != '\t')
-                    },
-                ),
-                opt(line_ending),
-            ))),
-        )),
-    )
-    .map(DescriptionBodyItem::TextSegment)
-    .parse(i)
-}
-
-fn description_inline_tag(i: &str) -> IResult<&str, DescriptionBodyItem<'_>, VerboseError<&str>> {
-    inline_tag.map(DescriptionBodyItem::InlineTag).parse(i)
-}
-
-fn description(i: &str) -> IResult<&str, Description<'_>, VerboseError<&str>> {
-    enum ParsedEntities<'a> {
-        BodyItem(DescriptionBodyItem<'a>),
-        Ignored,
+fn is_empty_or_multispace(s: &str) -> bool {
+    if s.is_empty() {
+        return true;
     }
-
-    context(
-        "description",
-        fold_many1(
-            alt((
-                line_leading.map(|_| ParsedEntities::Ignored),
-                space1.map(|_| ParsedEntities::Ignored),
-                description_inline_tag.map(ParsedEntities::BodyItem),
-                description_text_segment.map(ParsedEntities::BodyItem),
-            )),
-            Description { body_items: vec![] },
-            |mut description: Description<'_>, item| {
-                if let ParsedEntities::BodyItem(item) = item {
-                    description.body_items.push(item)
-                }
-                description
-            },
-        ),
-    )
-    .parse(i)
-}
-
-pub fn doc_comment(i: &str) -> IResult<&str, DocComment<'_>, VerboseError<&str>> {
-    context(
-        "doc_comment",
-        all_consuming(tuple((
-            comment_start,
-            opt(line_leading),
-            opt(description),
-            comment_end,
-        ))),
-    )
-    .map(|(_, _, description, _)| DocComment {
-        description,
-        block_tags: vec![],
-    })
-    .parse(i)
+    for ch in s.chars() {
+        if !ch.is_whitespace() && ch != '\t' && ch != '\n' && ch != '\r' {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -475,82 +520,73 @@ mod tests {
     }
 
     #[test]
-    fn test_description_text_segment() {
+    fn test_body_text_segment() {
+        assert_eq!(body_text_segment("\n"), Ok(("", "\n")));
         assert_eq!(
-            description_text_segment("\n"),
-            Ok(("", DescriptionBodyItem::TextSegment("\n")))
+            body_text_segment("Hello {@ world\n"),
+            Ok(("{@ world\n", "Hello "))
         );
         assert_eq!(
-            description_text_segment("Hello {@ world\n"),
-            Ok(("{@ world\n", DescriptionBodyItem::TextSegment("Hello ")))
+            body_text_segment("Hello */ world"),
+            Ok(("*/ world", "Hello "))
         );
         assert_eq!(
-            description_text_segment("Hello */ world"),
-            Ok(("*/ world", DescriptionBodyItem::TextSegment("Hello ")))
+            body_text_segment("Hello \\{@ world\n"),
+            Ok(("@ world\n", "Hello \\{"))
         );
         assert_eq!(
-            description_text_segment("Hello \\{@ world\n"),
-            Ok(("@ world\n", DescriptionBodyItem::TextSegment("Hello \\{")))
+            body_text_segment("Hello \\{\\@ world\n"),
+            Ok(("", "Hello \\{\\@ world\n"))
         );
         assert_eq!(
-            description_text_segment("Hello \\{\\@ world\n"),
-            Ok(("", DescriptionBodyItem::TextSegment("Hello \\{\\@ world\n")))
+            body_text_segment("Hello \\\\{@ world\n"),
+            Ok(("{@ world\n", "Hello \\\\"))
         );
         assert_eq!(
-            description_text_segment("Hello \\\\{@ world\n"),
-            Ok(("{@ world\n", DescriptionBodyItem::TextSegment("Hello \\\\")))
+            body_text_segment("Hello \\\\\\{ world\n"),
+            Ok(("", "Hello \\\\\\{ world\n"))
         );
         assert_eq!(
-            description_text_segment("Hello \\\\\\{ world\n"),
-            Ok((
-                "",
-                DescriptionBodyItem::TextSegment("Hello \\\\\\{ world\n")
-            ))
+            body_text_segment("Hello world\r\n"),
+            Ok(("", "Hello world\r\n"))
         );
         assert_eq!(
-            description_text_segment("Hello world\r\n"),
-            Ok(("", DescriptionBodyItem::TextSegment("Hello world\r\n")))
-        );
-        assert_eq!(
-            description_text_segment(""),
+            body_text_segment(""),
             Err(NomErr::Error(VerboseError {
                 errors: vec![
                     ("", VerboseErrorKind::Nom(ErrorKind::Verify)),
                     ("", VerboseErrorKind::Nom(ErrorKind::Alt)),
-                    ("", VerboseErrorKind::Context("description_text_segment"))
+                    ("", VerboseErrorKind::Context("body_text_segment"))
                 ]
             }))
         );
         assert_eq!(
-            description_text_segment("   \t "),
+            body_text_segment("   \t "),
             Err(NomErr::Error(VerboseError {
                 errors: vec![
                     ("   \t ", VerboseErrorKind::Nom(ErrorKind::Verify)),
                     ("   \t ", VerboseErrorKind::Nom(ErrorKind::Alt)),
-                    (
-                        "   \t ",
-                        VerboseErrorKind::Context("description_text_segment")
-                    )
+                    ("   \t ", VerboseErrorKind::Context("body_text_segment"))
                 ]
             }))
         );
         assert_eq!(
-            description_text_segment("{"),
+            body_text_segment("{"),
             Err(NomErr::Error(VerboseError {
                 errors: vec![
                     ("{", VerboseErrorKind::Nom(ErrorKind::Verify)),
                     ("{", VerboseErrorKind::Nom(ErrorKind::Alt)),
-                    ("{", VerboseErrorKind::Context("description_text_segment"))
+                    ("{", VerboseErrorKind::Context("body_text_segment"))
                 ]
             }))
         );
         assert_eq!(
-            description_text_segment("@"),
+            body_text_segment("@"),
             Err(NomErr::Error(VerboseError {
                 errors: vec![
                     ("@", VerboseErrorKind::Nom(ErrorKind::Verify)),
                     ("@", VerboseErrorKind::Nom(ErrorKind::Alt)),
-                    ("@", VerboseErrorKind::Context("description_text_segment"))
+                    ("@", VerboseErrorKind::Context("body_text_segment"))
                 ]
             }))
         );
@@ -571,11 +607,11 @@ mod tests {
                 "@blockTag",
                 Description {
                     body_items: vec![
-                        DescriptionBodyItem::TextSegment("This is the description section\n"),
-                        DescriptionBodyItem::TextSegment("that contains\n"),
-                        DescriptionBodyItem::TextSegment("multiple lines\n"),
-                        DescriptionBodyItem::TextSegment("\n"),
-                        DescriptionBodyItem::TextSegment("and paragraphs.\n"),
+                        BodyItem::TextSegment("This is the description section\n"),
+                        BodyItem::TextSegment("that contains\n"),
+                        BodyItem::TextSegment("multiple lines\n"),
+                        BodyItem::TextSegment("\n"),
+                        BodyItem::TextSegment("and paragraphs.\n"),
                     ]
                 }
             ))
@@ -590,13 +626,13 @@ mod tests {
                 "@blockTag",
                 Description {
                     body_items: vec![
-                        DescriptionBodyItem::TextSegment("This is the description section\n"),
-                        DescriptionBodyItem::TextSegment("that contains both text segments and "),
-                        DescriptionBodyItem::InlineTag(InlineTag {
+                        BodyItem::TextSegment("This is the description section\n"),
+                        BodyItem::TextSegment("that contains both text segments and "),
+                        BodyItem::InlineTag(InlineTag {
                             name: "inlineTag",
                             body_lines: vec![]
                         }),
-                        DescriptionBodyItem::TextSegment(".\n"),
+                        BodyItem::TextSegment(".\n"),
                     ]
                 }
             ))
@@ -613,13 +649,13 @@ mod tests {
                 "@blockTag",
                 Description {
                     body_items: vec![
-                        DescriptionBodyItem::TextSegment("This is the description section\n"),
-                        DescriptionBodyItem::TextSegment("that contains multi-line "),
-                        DescriptionBodyItem::InlineTag(InlineTag {
+                        BodyItem::TextSegment("This is the description section\n"),
+                        BodyItem::TextSegment("that contains multi-line "),
+                        BodyItem::InlineTag(InlineTag {
                             name: "inlineTag",
                             body_lines: vec!["\n", "tag body\n"]
                         }),
-                        DescriptionBodyItem::TextSegment("\n"),
+                        BodyItem::TextSegment("\n"),
                     ]
                 }
             ))
@@ -630,11 +666,11 @@ mod tests {
                 "",
                 Description {
                     body_items: vec![
-                        DescriptionBodyItem::InlineTag(InlineTag {
+                        BodyItem::InlineTag(InlineTag {
                             name: "inlineTag",
                             body_lines: vec!["with body"]
                         }),
-                        DescriptionBodyItem::TextSegment("\n"),
+                        BodyItem::TextSegment("\n"),
                     ]
                 }
             ))
@@ -642,7 +678,77 @@ mod tests {
     }
 
     #[test]
-    fn test_comment() {
+    fn test_block_tag() {
+        assert_eq!(
+            block_tag("@blockTag "),
+            Ok((
+                "",
+                BlockTag {
+                    name: "blockTag",
+                    body_items: vec![]
+                }
+            ))
+        );
+        assert_eq!(
+            block_tag("@blockTag*/"),
+            Ok((
+                "*/",
+                BlockTag {
+                    name: "blockTag",
+                    body_items: vec![]
+                }
+            ))
+        );
+        assert_eq!(
+            block_tag("@blockTag with body */"),
+            Ok((
+                "*/",
+                BlockTag {
+                    name: "blockTag",
+                    body_items: vec![BodyItem::TextSegment("with body ")]
+                }
+            ))
+        );
+        assert_eq!(
+            block_tag(r#"@blockTag with body @anotherBlockTag"#),
+            Ok((
+                "@anotherBlockTag",
+                BlockTag {
+                    name: "blockTag",
+                    body_items: vec![BodyItem::TextSegment("with body ")]
+                }
+            ))
+        );
+        assert_eq!(
+            block_tag(
+                r#"@blockTag with body
+                * @anotherBlockTag"#
+            ),
+            Ok((
+                "@anotherBlockTag",
+                BlockTag {
+                    name: "blockTag",
+                    body_items: vec![BodyItem::TextSegment("with body\n")]
+                }
+            ))
+        );
+        assert_eq!(
+            block_tag("@blockTag {@inlineTag}"),
+            Ok((
+                "",
+                BlockTag {
+                    name: "blockTag",
+                    body_items: vec![BodyItem::InlineTag(InlineTag {
+                        name: "inlineTag",
+                        body_lines: vec![]
+                    })]
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn test_comment_empty() {
         assert_eq!(
             doc_comment("/** */"),
             Ok((
@@ -653,15 +759,17 @@ mod tests {
                 }
             ))
         );
+    }
+
+    #[test]
+    fn test_comment_one_line_description() {
         assert_eq!(
             doc_comment("/** One-line description. */"),
             Ok((
                 "",
                 DocComment {
                     description: Some(Description {
-                        body_items: vec![DescriptionBodyItem::TextSegment(
-                            "One-line description. "
-                        )]
+                        body_items: vec![BodyItem::TextSegment("One-line description. ")]
                     }),
                     block_tags: vec![],
                 }
@@ -674,8 +782,8 @@ mod tests {
                 DocComment {
                     description: Some(Description {
                         body_items: vec![
-                            DescriptionBodyItem::TextSegment("One-line description containing "),
-                            DescriptionBodyItem::InlineTag(InlineTag {
+                            BodyItem::TextSegment("One-line description containing "),
+                            BodyItem::InlineTag(InlineTag {
                                 name: "inlineTag",
                                 body_lines: vec![]
                             })
@@ -694,12 +802,12 @@ mod tests {
                 DocComment {
                     description: Some(Description {
                         body_items: vec![
-                            DescriptionBodyItem::TextSegment("One-line description containing "),
-                            DescriptionBodyItem::InlineTag(InlineTag {
+                            BodyItem::TextSegment("One-line description containing "),
+                            BodyItem::InlineTag(InlineTag {
                                 name: "inlineTag",
                                 body_lines: vec![]
                             }),
-                            DescriptionBodyItem::TextSegment("and some text after it. "),
+                            BodyItem::TextSegment("and some text after it. "),
                         ]
                     }),
                     block_tags: vec![],
@@ -713,8 +821,8 @@ mod tests {
                 DocComment {
                     description: Some(Description {
                         body_items: vec![
-                            DescriptionBodyItem::TextSegment("One-line description containing "),
-                            DescriptionBodyItem::InlineTag(InlineTag {
+                            BodyItem::TextSegment("One-line description containing "),
+                            BodyItem::InlineTag(InlineTag {
                                 name: "inlineTag",
                                 body_lines: vec!["with body"]
                             }),
@@ -724,6 +832,10 @@ mod tests {
                 }
             ))
         );
+    }
+
+    #[test]
+    fn test_comment_multi_line() {
         assert_eq!(
             doc_comment(
                 r#"/**
@@ -736,20 +848,72 @@ mod tests {
                 DocComment {
                     description: Some(Description {
                         body_items: vec![
-                            DescriptionBodyItem::TextSegment(
-                                "This is a description-only comment.\n"
-                            ),
-                            DescriptionBodyItem::TextSegment("The description contains an "),
-                            DescriptionBodyItem::InlineTag(InlineTag {
+                            BodyItem::TextSegment("This is a description-only comment.\n"),
+                            BodyItem::TextSegment("The description contains an "),
+                            BodyItem::InlineTag(InlineTag {
                                 name: "inlineTag",
                                 body_lines: vec![],
                             }),
-                            DescriptionBodyItem::TextSegment("though.\n")
+                            BodyItem::TextSegment("though.\n")
                         ]
                     }),
                     block_tags: vec![]
                 }
             ))
         );
+    }
+
+    #[test]
+    fn test_comment_all_elements() {
+        assert_eq!(
+            doc_comment(
+                r#"/**
+                * This is a doc comment.
+                * It contains an {@inlineTag with some body} in its description.
+                *
+                * @blockTag1
+                * @blockTag2 with body text
+                * @blockTag3 with body text and {@inlineTag}
+                */"#
+            ),
+            Ok((
+                "",
+                DocComment {
+                    description: Some(Description {
+                        body_items: vec![
+                            BodyItem::TextSegment("This is a doc comment.\n"),
+                            BodyItem::TextSegment("It contains an "),
+                            BodyItem::InlineTag(InlineTag {
+                                name: "inlineTag",
+                                body_lines: vec!["with some body"],
+                            }),
+                            BodyItem::TextSegment("in its description.\n"),
+                            BodyItem::TextSegment("\n"),
+                        ]
+                    }),
+                    block_tags: vec![
+                        BlockTag {
+                            name: "blockTag1",
+                            body_items: vec![]
+                        },
+                        BlockTag {
+                            name: "blockTag2",
+                            body_items: vec![BodyItem::TextSegment("with body text\n"),]
+                        },
+                        BlockTag {
+                            name: "blockTag3",
+                            body_items: vec![
+                                BodyItem::TextSegment("with body text and "),
+                                BodyItem::InlineTag(InlineTag {
+                                    name: "inlineTag",
+                                    body_lines: vec![]
+                                }),
+                                BodyItem::TextSegment("\n"),
+                            ]
+                        },
+                    ]
+                }
+            ))
+        )
     }
 }

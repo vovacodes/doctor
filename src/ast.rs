@@ -3,8 +3,6 @@
 pub struct DocComment<'a> {
     #[cfg_attr(feature = "serde", serde(borrow))]
     pub description: Option<Description<'a>>,
-
-    #[cfg_attr(feature = "serde", serde(borrow))]
     pub block_tags: Vec<BlockTag<'a>>,
 }
 
@@ -12,31 +10,20 @@ pub struct DocComment<'a> {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Description<'a> {
     #[cfg_attr(feature = "serde", serde(borrow))]
-    pub body_items: Vec<DescriptionBodyItem<'a>>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum DescriptionBodyItem<'a> {
-    TextSegment(&'a str),
-    InlineTag(InlineTag<'a>),
+    pub body_items: Vec<BodyItem<'a>>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct BlockTag<'a> {
-    pub name: String,
-
-    #[cfg_attr(feature = "serde", serde(borrow))]
-    pub body_items: Vec<BlockTagBodyItem<'a>>,
+    pub name: &'a str,
+    pub body_items: Vec<BodyItem<'a>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum BlockTagBodyItem<'a> {
-    Text(String),
-
-    #[cfg_attr(feature = "serde", serde(borrow))]
+pub enum BodyItem<'a> {
+    TextSegment(&'a str),
     InlineTag(InlineTag<'a>),
 }
 

@@ -21,27 +21,52 @@ extern crate serde;
 ///
 /// ```
 /// use doctor::parse;
-/// use doctor::ast::{DocComment, Description, DescriptionBodyItem, InlineTag};
+/// use doctor::ast::{DocComment, Description, BodyItem, InlineTag, BlockTag};
 ///
 /// assert_eq!(
 ///     parse(r#"/**
 ///         * This is a doc comment.
 ///         * It contains an {@inlineTag with some body} in its description.
+///         *
+///         * @blockTag1
+///         * @blockTag2 with body text
+///         * @blockTag3 with body text and {@inlineTag}
 ///         */"#
 ///     ),
 ///     Ok(DocComment {
 ///         description: Some(Description {
 ///             body_items: vec![
-///                 DescriptionBodyItem::TextSegment("This is a doc comment.\n"),
-///                 DescriptionBodyItem::TextSegment("It contains an "),
-///                 DescriptionBodyItem::InlineTag(InlineTag {
+///                 BodyItem::TextSegment("This is a doc comment.\n"),
+///                 BodyItem::TextSegment("It contains an "),
+///                 BodyItem::InlineTag(InlineTag {
 ///                     name: "inlineTag",
 ///                     body_lines: vec!["with some body"],
 ///                 }),
-///                 DescriptionBodyItem::TextSegment("in its description.\n")
+///                 BodyItem::TextSegment("in its description.\n"),
+///                 BodyItem::TextSegment("\n"),
 ///             ]
 ///         }),
-///         block_tags: vec![]
+///         block_tags: vec![
+///             BlockTag {
+///                 name: "blockTag1",
+///                 body_items: vec![]
+///             },
+///             BlockTag {
+///                 name: "blockTag2",
+///                 body_items: vec![BodyItem::TextSegment("with body text\n"),]
+///             },
+///             BlockTag {
+///                 name: "blockTag3",
+///                 body_items: vec![
+///                     BodyItem::TextSegment("with body text and "),
+///                     BodyItem::InlineTag(InlineTag {
+///                         name: "inlineTag",
+///                         body_lines: vec![]
+///                     }),
+///                     BodyItem::TextSegment("\n"),
+///                 ]
+///             },
+///         ]
 ///     }),
 /// );
 /// ```
@@ -65,7 +90,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse() {
+    fn test_parse_invalid() {
         assert_eq!(
             parse("/** Comment */ not comment"),
             Err(Error::ParseError(

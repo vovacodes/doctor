@@ -19,7 +19,7 @@ e.g. JavaDoc, JSDoc, TSDoc, etc.
 
 ```rust
 use doctor::parse;
-use doctor::ast::{DocComment, Description, DescriptionBodyItem, InlineTag};
+use doctor::ast::{DocComment, Description, BodyItem, InlineTag};
 
 assert_eq!(
     parse(r#"/**
@@ -30,13 +30,13 @@ assert_eq!(
     Ok(DocComment {
         description: Some(Description {
             body_items: vec![
-                DescriptionBodyItem::TextSegment("This is a doc comment.\n"),
-                DescriptionBodyItem::TextSegment("It contains an "),
-                DescriptionBodyItem::InlineTag(InlineTag {
+                BodyItem::TextSegment("This is a doc comment.\n"),
+                BodyItem::TextSegment("It contains an "),
+                BodyItem::InlineTag(InlineTag {
                     name: "inlineTag",
                     body_lines: vec!["with some body"],
                 }),
-                DescriptionBodyItem::TextSegment("in its description.\n")
+                BodyItem::TextSegment("in its description.\n")
             ]
         }),
         block_tags: vec![]
