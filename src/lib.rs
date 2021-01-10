@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/doctor/0.2.2")]
+#![doc(html_root_url = "https://docs.rs/doctor/0.3.0")]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 
 pub mod ast;
