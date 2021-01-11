@@ -5,7 +5,7 @@
 //!   </p>
 //!   <p>
 //!     <a href="https://crates.io/crates/doctor"><img alt="crates.io" src="https://meritbadge.herokuapp.com/doctor"/></a>
-//!     <a href="https://docs.rs/doctor"><img alt="docs.rs" src="https://docs.rs/doctor/0.3.2"/></a>
+//!     <a href="https://docs.rs/doctor"><img alt="docs.rs" src="https://docs.rs/doctor/badge.svg"/></a>
 //!   </p>
 //! </div>
 //!
