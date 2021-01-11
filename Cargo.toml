@@ -1,6 +1,6 @@
 [package]
 name = "doctor"
-version = "0.3.1"
+version = "0.3.2"
 description = "Flexible low level parser for Javadoc-style doc comments: Javadoc, JSDoc, TSDoc, etc."
 authors = ["Vladimir Guguiev <wizardzloy@gmail.com>"]
 license = "MIT"
