@@ -1,4 +1,5 @@
 pre-release-replacements = [
     {file="src/lib.rs", search="https://docs.rs/doctor/[a-z0-9\\.-]+", replace="https://docs.rs/doctor/{{version}}"},
 ]
-pre-release-hook = ["cargo", "test", "--all-features"]
+#pre-release-hook = ["cargo", "test", "--all-features"]
+pre-release-hook = ["make", "pre-release"]
