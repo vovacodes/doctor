@@ -76,7 +76,6 @@
 //! Please check [the contributing documentation](./CONTRIBUTING.md)
 //!
 
-#![doc(html_root_url = "https://docs.rs/doctor/0.3.3")]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 
 pub mod ast;
